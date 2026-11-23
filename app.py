@@ -1,6 +1,9 @@
+
 from pathlib import Path
 import traceback
 import uvicorn
+
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -8,16 +11,54 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from backend import run_travel_agent
+from backend import (
+    run_travel_agent,
+    initialize_travel_graph,
+    close_travel_graph
+)
+
+from fastapi.concurrency import run_in_threadpool
+
+
+
+# =========================
+# Base Directory
+# =========================
 
 BASE_DIR = Path(__file__).resolve().parent
+
+
+# =========================
+# Application Lifespan
+# =========================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+
+    await initialize_travel_graph()
+
+    try:
+        yield
+
+    finally:
+        await close_travel_graph()
+
+
+# =========================
+# FastAPI Application
+# =========================
 
 app = FastAPI(
     title="PlanMyTrip - AI Travel Planner",
     description="LangGraph Multi-Agent Travel Planner with FastAPI Frontend",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
+
+# =========================
+# Static Files
+# =========================
 
 app.mount(
     "/static",
@@ -26,20 +67,31 @@ app.mount(
 )
 
 
+# =========================
+# Templates
+# =========================
+
 templates = Jinja2Templates(
     directory=str(BASE_DIR / "templates")
 )
 
 
+# =========================
+# Request Model
+# =========================
 
 class TravelRequest(BaseModel):
     message: str
     thread_id: str | None = None
 
 
+# =========================
+# Home Route
+# =========================
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
+
     return templates.TemplateResponse(
         request=request,
         name="index.html",
@@ -47,9 +99,15 @@ async def home(request: Request):
     )
 
 
+# =========================
+# Travel Planner API
+# =========================
+
 @app.post("/api/travel")
 async def travel_planner(request_data: TravelRequest):
+
     try:
+
         user_message = request_data.message.strip()
 
         if not user_message:
@@ -61,7 +119,8 @@ async def travel_planner(request_data: TravelRequest):
                 }
             )
 
-        result = run_travel_agent(
+        # Directly await the async travel agent
+        result = await run_travel_agent(
             user_input=user_message,
             thread_id=request_data.thread_id
         )
@@ -73,12 +132,14 @@ async def travel_planner(request_data: TravelRequest):
                 "answer": result["answer"],
                 "flight_results": result["flight_results"],
                 "hotel_results": result["hotel_results"],
+                "weather_results": result["weather_results"],
                 "itinerary": result["itinerary"],
                 "llm_calls": result["llm_calls"],
             }
         )
 
     except Exception as e:
+
         print("ERROR:", e)
         traceback.print_exc()
 
@@ -91,25 +152,38 @@ async def travel_planner(request_data: TravelRequest):
         )
 
 
+# =========================
+# Health Check
+# =========================
 
 @app.get("/health")
 async def health_check():
+
     return {
         "status": "ok",
         "message": "AI Travel Planner API is running"
     }
 
 
+# =========================
+# Favicon
+# =========================
+
 @app.get("/favicon.ico")
 async def favicon():
+
     return JSONResponse(content={})
 
 
+# =========================
+# Run Application
+# =========================
 
 if __name__ == "__main__":
+
     uvicorn.run(
         "app:app",
         host="127.0.0.1",
-        port=8000,
+        port=8001,
         reload=True
     )

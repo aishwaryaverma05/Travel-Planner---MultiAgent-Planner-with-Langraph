@@ -92,7 +92,7 @@ async function sendMessage() {
     currentThreadId = data.thread_id;
     localStorage.setItem("travel_thread_id", currentThreadId);
 
-    showResult(data.answer, data.thread_id);
+    showResult(data.answer, data.thread_id, data.weather_results);
   } catch (error) {
     showError(error.message);
   } finally {
