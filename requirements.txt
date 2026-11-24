@@ -17,3 +17,4 @@ jinja2
 langchain-mcp-adapters
 mcp
 nest_asyncio
+certifi
